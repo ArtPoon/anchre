@@ -19,7 +19,7 @@ import subprocess
 
 class IronChef:
     def __init__(self, handle, csv=None, iso_format=True, origin=date(1970,1,1),
-                 delimiter='_', field=-1, fasttree2=None):
+                 delimiter='_', field=-1, ft2path=None, Rpath=None, tmpfile='ironchef-tmp'):
         self.csv = csv
         self.iso_format = iso_format
         self.origin = origin
@@ -27,7 +27,8 @@ class IronChef:
         self.field = field
 
         # paths to binaries
-        self.fasttree2=fasttree2
+        self.ft2path=ft2path
+        self.Rpath=Rpath
 
         # if given, parse dates from csv
         self.dates = {}
@@ -40,6 +41,7 @@ class IronChef:
         self.parse_fasta(fasta)
 
         self.tmp = tempfile.gettempdir()
+        self.tmpfile = os.path.join(self.tmp, tmpfile)
         self.test()
 
     def test(self):
@@ -47,8 +49,11 @@ class IronChef:
         Check whether expected binaries are accessible
         :return:
         """
-        if not os.path.exists(self.fasttree2):
-            print 'ERROR: Failed to detect FastTree2 at', self.fasttree2
+        if not os.path.exists(self.ft2path):
+            print 'ERROR: Failed to detect FastTree2 at', self.ft2path
+            sys.exit()
+        if not os.path.exists(self.Rpath):
+            print 'ERROR: Failed to detect R at', self.ft2path
             sys.exit()
 
 
@@ -210,9 +215,20 @@ class IronChef:
         :param filename:
         :return:
         """
-        p = subprocess.Popen([self.fasttree2, '-nt', '-gtr'], stdin=handle, stdout=subprocess.PIPE)
+        p = subprocess.Popen([self.ft2path, '-nt', '-gtr'], stdin=handle, stdout=subprocess.PIPE)
         stdout, stderr = p.communicate()
         return stdout
+
+    def call_root2tip (self, tree):
+        """
+        Call an R script that implements Rosemary's rtt() function for re-rooting
+        a tree based on tip dates.
+        :return:
+        """
+        p = subprocess.Popen([self.Rpath, 'rtt.r', tree], stdout=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+        return stdout
+
 
 
 
@@ -233,6 +249,7 @@ def main():
                         help='Sequence header field separator.')
     parser.add_argument('-pos', type=int, default=-1, help='Python-style index for date in sequence header.')
     parser.add_argument('-ft2', default='/usr/local/bin/fasttree2', help='Absolute path to FastTree2')
+    parser.add_argument('-R', default='/usr/bin/Rscript', help='Absolute path to Rscript')
 
     args = parser.parse_args()
     infile = open(args.fasta, 'rU')
@@ -241,10 +258,12 @@ def main():
         csvfile = open(args.csv, 'rU')
 
     ichef = IronChef(handle=infile, csv=csvfile, iso_format=args.iso,
-                     delimiter=args.sep, field=args.pos, fasttree2=args.ft2)
+                     delimiter=args.sep, field=args.pos,
+                     ft2path=args.ft2, Rpath=args.R)
     tmpfile = ichef.output_seqs()
     with open(tmpfile, 'rU') as f:
         tree = ichef.call_fasttree2(f)
+    print tree
 
     conseq = ichef.consensus_earliest()
     print conseq
