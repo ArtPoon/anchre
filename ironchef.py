@@ -16,6 +16,7 @@ import tempfile
 import os
 import sys
 import subprocess
+from pyphy import PyPhy
 
 class IronChef:
     def __init__(self, handle, csv=None, iso_format=True, origin=date(1970,1,1),
@@ -29,6 +30,7 @@ class IronChef:
         # paths to binaries
         self.ft2path=ft2path
         self.Rpath=Rpath
+        self.pyphy = PyPhy(os.getcwd(), 1)  # instance of HyPhy
 
         # if given, parse dates from csv
         self.dates = {}
@@ -43,6 +45,7 @@ class IronChef:
         self.tmp = tempfile.gettempdir()
         self.tmpfile = os.path.join(self.tmp, tmpfile)
         self.test()
+
 
     def test(self):
         """
@@ -215,7 +218,10 @@ class IronChef:
         :param filename:
         :return:
         """
-        p = subprocess.Popen([self.ft2path, '-nt', '-gtr'], stdin=handle, stdout=subprocess.PIPE)
+        p = subprocess.Popen([self.ft2path, '-quiet', '-nt', '-gtr'],
+                             stdin=handle,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
         return stdout
 
@@ -223,12 +229,21 @@ class IronChef:
         """
         Call an R script that implements Rosemary's rtt() function for re-rooting
         a tree based on tip dates.
-        :return:
+        :param tree: Newick tree string
+        :return: dictionary with two key-value pairs for rooted and dated trees
         """
         p = subprocess.Popen([self.Rpath, 'rtt.r', tree], stdout=subprocess.PIPE)
         stdout, stderr = p.communicate()
-        return stdout
+        # clean kludge from R stdout
+        rooted_tree, dated_tree = map(lambda s: s.replace('[1] "', '').replace('NA;"', '0:0;'), stdout.split('\n')[:2])
+        res = {'rooted': rooted_tree, 'dated': dated_tree}
+        return res
 
+    def ancreml(self):
+        """
+        Ancestral sequence reconstruction at root by maximum likelihood.
+        :return:
+        """
 
 
 
@@ -263,10 +278,12 @@ def main():
     tmpfile = ichef.output_seqs()
     with open(tmpfile, 'rU') as f:
         tree = ichef.call_fasttree2(f)
-    print tree
 
-    conseq = ichef.consensus_earliest()
-    print conseq
+    res = ichef.call_root2tip(tree)
+    print res['dated']
+
+    #conseq = ichef.consensus_earliest()
+
 
     infile.close()
 

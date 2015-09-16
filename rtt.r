@@ -6,22 +6,23 @@ if (length(args) != 1) {
 }
 
 input.nwk <- args[1]
-if (!file.exists(input.nwk)) {
-	stop('input file does not exist')
-}
+#if (!file.exists(input.nwk)) {
+#	stop('input file does not exist')
+#}
 
 # load tree object from file
 library(ape)
-tree <- read.tree(input.nwk)
+tree <- read.tree(text=input.nwk)
 
 # extract tip dates from labels
 tips <- tree$tip.label
 temp <- t(sapply(tips, function(s) strsplit(s, split='_')[[1]]))
 tip.dates <- as.integer(temp[,ncol(temp)])  # take last column
 
+source('chronos.R')
 
 rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation", 
-    opt.tol = .Machine$double.eps^0.25)  {
+    			 opt.tol = .Machine$double.eps^0.25)  {
     if (objective == "correlation") 
         objective <- function(x, y) cor.test(y, x)$estimate
     else if (objective == "rsquared") 
@@ -32,6 +33,11 @@ rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation",
 
     ut <- unroot(t)
     dist <- dist.nodes(ut)[, 1:(ut$Nnode + 2)]
+      
+    # Save the tip labels, they might get reordered during the re-root
+	# which would muss up th ordering of tip.dates
+	saved.tips <- t$tip.label
+	ut$tip.label <- unlist(lapply(1:length(ut$tip.label), toString)) # Give them 1..n, as strings
 
     f <- function (x, parent, child) {
         edge.dist <- x * dist[parent, ] + (1 - x) * dist[child,]
@@ -64,9 +70,48 @@ rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation",
         best.edge.length)
     ut <- collapse.singles(ut)
     ut <- root(ut, "new.root")
-    drop.tip(ut, "new.root")
+    rt <- drop.tip(ut, "new.root")
+    
+    # Reorder the tip dates, and restore the labels
+  	permutation <- as.integer(rt$tip.label)
+  	tip.dates <- tip.dates[permutation]
+	rt$tip.label <- saved.tips[permutation]
+	
+	# Get inferredtime at root
+    distances <- node.depth.edgelength(rt)  # distance from root to node
+    tip.dists <- distances[1:length(tip.dates)]
+    model <- lm(tip.dists ~ tip.dates)
+    a <- model$coefficients[1]
+    b <- model$coefficients[2]
+    root.time <- as.double(-a/b)  # x-intercept
+    
+    # use chronos() to rescale node heights
+    tip.times <- data.frame(index=1:length(tip.dates), name=rt$tip.label, time=tip.dates, row.names=1:length(tip.dates))
+    max.time <- max(tip.times$time)
+    min.tip.time <- min(tip.times$time)
+    
+    calib <- makeChronosCalib(rt)
+    calib$age.min <- min.tip.time - root.time
+    calib$age.max <- max.time - root.time
+    calib <- rbind(calib, data.frame(node=tip.times$index,
+    	age.min=min.tip.time - tip.times$time,
+    	age.max=max.time - tip.times$time,
+    	soft.bounds=FALSE))
+    dated.tree <- RLchronos(rt, lambda=1, 
+    	model='discrete', 
+    	calibration=calib, 
+    	control=chronos.control(nb.rate.cat=1), quiet=TRUE)
+    
+    # package results as list object to return
+    res <- {}
+    res$tree <- rt
+    res$origin <- root.time
+    res$dated.tree <- dated.tree
+    
+    return(res)
 }
 
-rooted <- rtt(tree, tip.dates)
+res <- rtt(tree, tip.dates)
 
-write.tree(rooted)  # to stdout
+write.tree(res$tree)  # to stdout
+write.tree(res$dated.tree)
