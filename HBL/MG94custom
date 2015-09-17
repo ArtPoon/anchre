@@ -459,7 +459,6 @@ for (customLoopCounter2=1; customLoopCounter2<6; customLoopCounter2=customLoopCo
 	}
 }				
 
-
 NICETY_LEVEL = 3;
 
 MG94custom = 0;

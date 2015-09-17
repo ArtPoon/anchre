@@ -27,34 +27,15 @@ function  setElement (h,v,cc)
 
 // needs modelDesc as string, e.g., 010010
 
-sharedFlag = 0;
 categoriesUsed = 0;
 
-#include "modelParameters.mdl";
 
-if (modelType >0)
-{
-	sharedFlag = 1;
-	if (modelType == 2)
-	{
-		categoriesUsed = 1;
-		#include "defineGamma.mdl";
-	}
-	if (modelType == 3)
-	{
-		categoriesUsed = 1;
-		#include "defineHM.mdl";
-	}
-}
+global AC=1;
+global AT=1;
+global CG=1;
+global CT=1;
+global GT=1;
 
-if (sharedFlag)
-{
-	global AC=1;
-	global AT=1;
-	global CG=1;
-	global CT=1;
-	global GT=1;
-}
 
 
 mSpecMatrix = {{*,1,1,1}{1,*,1,1}{1,1,*,1}{1,1,1,*}};

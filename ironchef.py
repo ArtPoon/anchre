@@ -17,10 +17,13 @@ import os
 import sys
 import subprocess
 from pyphy import PyPhy
+from Bio import Phylo, SeqIO
+from StringIO import StringIO
 
 class IronChef:
     def __init__(self, handle, csv=None, iso_format=True, origin=date(1970,1,1),
-                 delimiter='_', field=-1, ft2path=None, Rpath=None, tmpfile='ironchef-tmp'):
+                 delimiter='_', field=-1, ft2path=None, Rpath=None, java=None,
+                 tmpfile='ironchef-tmp'):
         self.csv = csv
         self.iso_format = iso_format
         self.origin = origin
@@ -28,8 +31,9 @@ class IronChef:
         self.field = field
 
         # paths to binaries
-        self.ft2path=ft2path
-        self.Rpath=Rpath
+        self.ft2path = ft2path
+        self.Rpath = Rpath
+        self.java = java
         self.pyphy = PyPhy(os.getcwd(), 1)  # instance of HyPhy
 
         # if given, parse dates from csv
@@ -201,49 +205,92 @@ class IronChef:
             all_seqs.extend(sample)
         return self.consensus(all_seqs)
 
-    def output_seqs (self, filename='ironchef-tmp.fa'):
+    def output_seqs (self, to_file=True):
         """
         Write out sequences to a temporary FASTA file.
         :return:
         """
-        with open(filename, 'w') as f:
-            for date, sample in self.seqs.iteritems():
-                for i, seq in enumerate(sample):
-                    f.write('>%d_%d\n%s\n' % (i, date, seq))
-        return f.name
+
+        fasta = []
+        for date, sample in self.seqs.iteritems():
+            for i, seq in enumerate(sample):
+                fasta.append(['%d_%d' % (i, date), seq])
+
+        if to_file:
+            with open(self.tmpfile, 'w') as f:
+                for h, s in fasta:
+                    f.write('>%s\n%s\n' % (h, s))
+            return None
+        return fasta
+
 
     def call_fasttree2 (self, handle):
         """
-        Call FastTree2 on temporary FASTA
-        :param filename:
+        Call FastTree2 on FASTA file
+        :param handle: open file handle to FASTA file
         :return:
         """
-        p = subprocess.Popen([self.ft2path, '-quiet', '-nt', '-gtr'],
+        p = subprocess.Popen([self.ft2path, '-quiet', '-nosupport', '-nt', '-gtr'],
                              stdin=handle,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
         return stdout
 
-    def call_root2tip (self, tree):
+    def call_rtt (self, tree):
         """
         Call an R script that implements Rosemary's rtt() function for re-rooting
         a tree based on tip dates.
         :param tree: Newick tree string
         :return: dictionary with two key-value pairs for rooted and dated trees
         """
+        os.chdir('R/')
         p = subprocess.Popen([self.Rpath, 'rtt.r', tree], stdout=subprocess.PIPE)
         stdout, stderr = p.communicate()
         # clean kludge from R stdout
-        rooted_tree, dated_tree = map(lambda s: s.replace('[1] "', '').replace('NA;"', '0:0;'), stdout.split('\n')[:2])
-        res = {'rooted': rooted_tree, 'dated': dated_tree}
+        #rooted_tree, dated_tree = map(lambda s: s.replace('[1] "', '').replace('NA;"', '0:0;'),
+        #                              stdout.split('\n')[:2])
+        #res = {'rooted': rooted_tree, 'dated': dated_tree}
+        rooted_tree = stdout.replace('[1] ', '').strip('"\n')
+        os.chdir('../')
+        return rooted_tree
+
+    def call_root2tip(self, tree):
+        """
+        Call jar file that implements a modified version of Andrew Rambaut's
+        root-to-tip method (Path-O-Gen).
+        :param tree: a Newick tree string
+        :return: a dictionary that includes the time-scaled tree
+        """
+        # write tree to temporary file
+        with open(self.tmpfile, 'w') as handle:
+            handle.write(tree)
+
+        out1 = os.path.join(self.tmp, 'ironchef-tmp.r2t.timetree')
+        out2 = os.path.join(self.tmp, 'ironchef-tmp.r2t.csv')
+
+        os.chdir('java/')
+        p = subprocess.Popen([self.java, '-jar', 'RLRootToTip.jar', '-timetree', out1, '-newick', self.tmpfile, out2],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+
+        # read outputs
+        with open(out1, 'rU') as handle:
+            timetree = Phylo.read(handle, 'nexus')
+        with open(out2, 'rU') as handle:
+            coef = handle.readlines()
+
+        output = StringIO()
+        Phylo.write(timetree, output, 'newick')
+        res = {'timetree': output.getvalue()}
+        values = coef[1].strip('\n').split(',')
+        for i, key in enumerate(coef[0].strip('\n').split(',')):
+            res.update({key: values[i]})
+
+        os.chdir('../')  # revert to parent dir
         return res
 
-    def ancreml(self):
-        """
-        Ancestral sequence reconstruction at root by maximum likelihood.
-        :return:
-        """
+    def call_beast(self, fasta):
 
 
 
@@ -265,27 +312,40 @@ def main():
     parser.add_argument('-pos', type=int, default=-1, help='Python-style index for date in sequence header.')
     parser.add_argument('-ft2', default='/usr/local/bin/fasttree2', help='Absolute path to FastTree2')
     parser.add_argument('-R', default='/usr/bin/Rscript', help='Absolute path to Rscript')
+    parser.add_argument('-java', default='/usr/bin/java', help='Absolute path to Java interpreter')
 
     args = parser.parse_args()
-    infile = open(args.fasta, 'rU')
+
     csvfile = None
     if args.csv is not None:
         csvfile = open(args.csv, 'rU')
+    with open(args.fasta, 'rU') as infile:
+        ichef = IronChef(handle=infile, csv=csvfile, iso_format=args.iso,
+                         delimiter=args.sep, field=args.pos,
+                         ft2path=args.ft2, Rpath=args.R, java=args.java)
+    if csvfile:
+        csvfile.close()
 
-    ichef = IronChef(handle=infile, csv=csvfile, iso_format=args.iso,
-                     delimiter=args.sep, field=args.pos,
-                     ft2path=args.ft2, Rpath=args.R)
-    tmpfile = ichef.output_seqs()
-    with open(tmpfile, 'rU') as f:
+    # construct a tree
+    ichef.output_seqs(to_file=True)
+    with open(ichef.tmpfile, 'rU') as f:
         tree = ichef.call_fasttree2(f)
 
-    res = ichef.call_root2tip(tree)
-    print res['dated']
+    # root the tree using tip dates
+    rooted = ichef.call_rtt(tree)
 
-    #conseq = ichef.consensus_earliest()
+    # re-estimate node heights
+    res = ichef.call_root2tip(rooted)
+
+    # get the consensus sequence
+    conseq = ichef.consensus_earliest()
+
+    # load sequences into HyPhy
+    fasta = ichef.output_seqs(to_file=False)
+    ancseq, lf = ichef.pyphy.ancre(fasta, rooted, is_codon=False)
 
 
-    infile.close()
+
 
 
 if __name__ == "__main__":
