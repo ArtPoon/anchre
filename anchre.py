@@ -22,12 +22,12 @@ from beauti import Beauti
 from Bio import Phylo, SeqIO
 from StringIO import StringIO
 
-class IronChef:
+class Anchre:
     def __init__(self,
                  csv=None, iso_format=True, origin=date(1970,1,1),
                  delimiter='_', field=-1,
                  ft2path=None, Rpath=None, java=None,
-                 tmpfile='ironchef-tmp',
+                 tmpfile='anchre-tmp',
                  beast_xml_template='beast-template.xml'):
         self.csv = csv
         self.iso_format = iso_format
@@ -51,6 +51,7 @@ class IronChef:
         # store sequence records
         self.fasta = []
         self.seqs = {}  # grouped by collection date
+        self.last_date = None
 
         self.tmp = tempfile.gettempdir()
         self.tmpfile = os.path.join(self.tmp, tmpfile)
@@ -101,6 +102,10 @@ class IronChef:
                 self.seqs.update({this_date: []})
 
             self.seqs[this_date].append(s)
+
+        dates = self.seqs.keys()
+        dates.sort(reverse=True)
+        self.last_date = dates[0]
 
     def read (self, handle):
         """
@@ -284,13 +289,13 @@ class IronChef:
         with open(self.tmpfile, 'w') as handle:
             handle.write(tree)
 
-        out1 = os.path.join(self.tmp, 'ironchef-tmp.r2t.timetree')
-        out2 = os.path.join(self.tmp, 'ironchef-tmp.r2t.csv')
+        out1 = os.path.join(self.tmp, 'anchre.r2t.timetree')
+        out2 = os.path.join(self.tmp, 'anchre.r2t.csv')
 
         p = subprocess.check_call([self.java, '-jar', 'java/RLRootToTip.jar',
                               '-timetree', out1,
                               '-newick', self.tmpfile,
-                              out2])
+                              out2], stdout=subprocess.PIPE)
 
         # read outputs
         with open(out1, 'rU') as handle:
@@ -308,7 +313,7 @@ class IronChef:
 
         return res
 
-    def call_hyphy_ancre(self, tree, is_codon):
+    def call_hyphy_ancre(self, tree, model_spec='010010', is_codon=False):
         """
 
         :param tree: Newick tree string
@@ -329,11 +334,16 @@ class IronChef:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
             return None, None
 
-        ancseq, lf = self.pyphy.ancre(self.fasta, tree, is_codon)
+        ancseq, lf = self.pyphy.ancre(fasta=self.fasta, newick=tree,
+                                      model_spec=model_spec, is_codon=is_codon)
         return dict(ancseq), lf
 
 
-    def call_beast(self, sample_size=10):
+    def call_beast(self, chain_length=1E6,
+                   screen_step=1E5,
+                   log_step=1E4,
+                   treelog_step=1E4,
+                   sample_size=100):
         """
         Use BEAST to sample trees from the posterior density under a
         strict molecular clock model.  If you want different settings,
@@ -341,20 +351,25 @@ class IronChef:
         :return: a list of Newick tree strings
         """
         log, treelog = self.beauti.populate(fasta=self.fasta,
-                                            stem=os.path.join(self.tmp, 'beast'))
+                                            stem=os.path.join(self.tmp, 'beast'),
+                                            chain_length=chain_length,
+                                            screen_step=screen_step,
+                                            log_step=log_step,
+                                            treelog_step=treelog_step)
         self.beauti.write(self.tmpfile)
         # this was tested on version 1.8.1
         p = subprocess.check_call([self.java, '-jar', 'java/beast.jar',
                                    '-beagle_off',
                                    '-overwrite',
-                                   self.tmpfile])
+                                   self.tmpfile], stdout=subprocess.PIPE)
+
+        with open(log, 'rU') as f:
+            traces = self.beauti.parse_log(f)
+
         with open(treelog, 'rU') as f:
-            trees, mctree = self.beauti.parse_treelog(f, sample_size=sample_size)
+            trees = self.beauti.parse_treelog(f, sample_size=sample_size)
 
-        return trees, mctree
-
-
-
+        return traces, trees
 
 
 
@@ -364,7 +379,12 @@ def main():
     parser = argparse.ArgumentParser(description='Timing and ancestral reconstruction from dated'
                                                  'sequence alignments.')
 
+    # positional arguments
     parser.add_argument('fasta', help='<input FASTA> sequence alignment')
+    parser.add_argument('anc', help='<output FASTA> ancestral sequence reconstructions')
+    parser.add_argument('mrca', help='<output CSV> time to MRCA')
+
+    # optional arguments
     parser.add_argument('-csv', default=None, help='(input CSV) optional file containing sequence headers '
                                                    'and sample collection dates')
     parser.add_argument('-iso', action='store_true',
@@ -379,40 +399,78 @@ def main():
 
     args = parser.parse_args()
 
+
     csv = None if args.csv is None else open(args.csv, 'rU')
-    ichef = IronChef(csv=csv, iso_format=args.iso,
+    anchre = Anchre(csv=csv, iso_format=args.iso,
                      delimiter=args.sep, field=args.pos,
                      ft2path=args.ft2, Rpath=args.R, java=args.java)
 
     # load sequences
     with open(args.fasta, 'rU') as f:
-        ichef.read(f)
+        anchre.read(f)
+
+    # prepare outputs
+    fanc = open(args.anc, 'w')
+    fmrca = open(args.mrca, 'w')
+    fmrca.write('method,value,lower.CI,upper.CI\n')
 
     # construct a tree
-    tree = ichef.call_fasttree2(raw=True)
-    print tree
+    print 'fasttree2'
+    tree = anchre.call_fasttree2(raw=True)
+    #print tree
 
     # root the tree using tip dates
-    rooted = ichef.call_rtt(tree)
-    print rooted
+    print 'rtt'
+    rooted = anchre.call_rtt(tree)
+    #print rooted
 
     # re-estimate node heights
-    res = ichef.call_root2tip(rooted)
+    print 'root2tip'
+    res = anchre.call_root2tip(rooted)
     timetree = res['timetree']
-    print timetree
+    origin = res['x-intercept']
+    fmrca.write('root2tip,%s,,\n' % (origin,))
 
     # get the consensus sequence
-    conseq = ichef.consensus_earliest()
-    print conseq
+    conseq = anchre.consensus_earliest()
+    fanc.write('>consensus_earliest\n%s\n' % (conseq,))
+    conseq = anchre.consensus_all()
+    fanc.write('>consensus_all\n%s\n' % (conseq,))
 
     # load sequences into HyPhy
-    ancseq, lf = ichef.call_hyphy_ancre(tree=rooted, is_codon=False)
-    print ancseq['Node0']
+    print 'ML anc res'
+    ancseq, lf = anchre.call_hyphy_ancre(tree=rooted, model_spec='010020', is_codon=False)
+    fanc.write('>ML_rooted\n%s\n' % (ancseq['Node0'], ))
+
+    ancseq, _ = anchre.call_hyphy_ancre(tree=timetree, model_spec='010020', is_codon=False)
+    fanc.write('>ML_timetree\n%s\n' % (ancseq['Node0'], ))
 
     # BEAST!
-    ichef.call_beast()
+    print 'BEAST'
+    traces, trees = anchre.call_beast(sample_size=1000)
+    #print traces['posterior']
 
+    sample_origin = map(lambda t: anchre.last_date - t, traces['treeModel.rootHeight'][10:])
+    sample_origin.sort()
+    n = len(sample_origin)
+    median = ((sample_origin[n/2-1] + sample_origin[n/2])/2.) if n % 2 == 0 else sample_origin[n/2]
+    lower = sample_origin[int(0.025*n)]
+    upper = sample_origin[int(0.975*n)]
+    fmrca.write('BEAST,%f,%f,%f\n' % (median, lower, upper))
 
+    print 'BEAST anc res'
+    mctree = anchre.beauti.max_credible(trees)
+    #print mctree
+
+    # get additional ancestral sequence reconstructions
+    ancseq, _ = anchre.call_hyphy_ancre(tree=mctree, model_spec='010020', is_codon=False)
+    fanc.write('>ML_BEAST_mctree\n%s\n' % (ancseq['Node0'], ))
+    for rep, tree in enumerate(trees):
+        ancseq, _ = anchre.call_hyphy_ancre(tree=tree, model_spec='010020', is_codon=False)
+        fanc.write('>ML_BEAST_tree%d\n%s\n' % (rep, ancseq['Node0']))
+
+    fanc.close()
+    fmrca.close()
 
 
 if __name__ == "__main__":

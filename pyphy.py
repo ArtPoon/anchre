@@ -120,7 +120,6 @@ class PyPhy:
         # set up analysis
         self.read_data(fasta, is_codon)
         self.set_model(model_spec=model_spec, is_codon=is_codon)
-        print self.stderr()
         self.read_tree(newick)
 
         if is_codon:

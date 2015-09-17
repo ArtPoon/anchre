@@ -214,7 +214,7 @@
 		</log>
 
 		
-		<log fileName="template.log" filename="tests/beast-test.log" id="fileLog" logEvery="1000" overwrite="false">
+		<log fileName="template.log" filename="tests/beast-test.log" id="fileLog" logEvery="100" overwrite="false">
 			<posterior idref="posterior" />
 			<prior idref="prior" />
 			<likelihood idref="likelihood" />
@@ -230,7 +230,7 @@
 		</log>
 
 		
-		<logTree fileName="tests/beast-test.trees" id="treeFileLog" logEvery="1000" nexusFormat="true" sortTranslationTable="true">
+		<logTree fileName="tests/beast-test.trees" id="treeFileLog" logEvery="100" nexusFormat="true" sortTranslationTable="true">
 			<treeModel idref="treeModel" />
 			<trait name="rate" tag="rate">
 				<strictClockBranchRates idref="branchRates" />
