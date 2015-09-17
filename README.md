@@ -1,4 +1,7 @@
 # anchre
+![Image of an anchor]
+(https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Ancre_viking_Prigny_0033sc.jpg/159px-Ancre_viking_Prigny_0033sc.jpg)
+
 Code for the Gates/RSA methods bakeoff.  Implements some phylogenetic and ancestral reconstruction methods.
 
 ## Dependencies
