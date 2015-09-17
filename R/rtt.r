@@ -14,14 +14,16 @@ input.nwk <- args[1]
 library(ape)
 tree <- read.tree(text=input.nwk)
 
+
 # extract tip dates from labels
 tips <- tree$tip.label
-temp <- t(sapply(tips, function(s) strsplit(s, split='_')[[1]]))
-tip.dates <- as.integer(temp[,ncol(temp)])  # take last column
+tip.dates <- sapply(tips, function(s) {
+	items <- strsplit(s, split='_')[[1]]
+	return (as.integer(items[length(items)]))
+})
 
 
-
-source('chronos.R')
+#source('chronos.R')
 
 rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation", 
     			 opt.tol = .Machine$double.eps^0.25)  {
@@ -41,7 +43,8 @@ rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation",
     #compute.brlen(ut, padded.brlens)
     
     # compute pairwise distances between tips and all nodes
-    dist <- dist.nodes(ut)[ ,1:length(tip.dates)]#[, 1:(ut$Nnode + 2)]
+    dist <- dist.nodes(ut)[ ,1:length(tip.dates)]
+    #dist <- dist.nodes(ut)[, 1:(ut$Nnode + 2)]
     
     # Save the tip labels, they might get reordered during the re-root
 	# which would muss up th ordering of tip.dates
@@ -94,24 +97,23 @@ rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation",
     b <- model$coefficients[2]
     root.time <- as.double(-a/b)  # x-intercept
     
-    # use chronos() to rescale node heights
-    if (FALSE) {
-    tip.times <- data.frame(index=1:length(tip.dates), name=rt$tip.label, time=tip.dates, row.names=1:length(tip.dates))
-    max.time <- max(tip.times$time)
-    min.tip.time <- min(tip.times$time)
+    ## use chronos() to rescale node heights
+    ## FIXME: this is unstable
+    # tip.times <- data.frame(index=1:length(tip.dates), name=rt$tip.label, time=tip.dates, row.names=1:length(tip.dates))
+    # max.time <- max(tip.times$time)
+    # min.tip.time <- min(tip.times$time)
     
-    calib <- makeChronosCalib(rt)
-    calib$age.min <- min.tip.time - root.time
-    calib$age.max <- max.time - root.time
-    calib <- rbind(calib, data.frame(node=tip.times$index,
-    	age.min=min.tip.time - tip.times$time,
-    	age.max=max.time - tip.times$time,
-    	soft.bounds=FALSE))
-    dated.tree <- RLchronos(rt, lambda=1, 
-    	model='discrete', 
-    	calibration=calib, 
-    	control=chronos.control(nb.rate.cat=1), quiet=TRUE)
-    }
+    # calib <- makeChronosCalib(rt)
+    # calib$age.min <- min.tip.time - root.time
+    # calib$age.max <- max.time - root.time
+    # calib <- rbind(calib, data.frame(node=tip.times$index,
+    	# age.min=min.tip.time - tip.times$time,
+    	# age.max=max.time - tip.times$time,
+    	# soft.bounds=FALSE))
+    # dated.tree <- RLchronos(rt, lambda=1, 
+    	# model='discrete', 
+    	# calibration=calib, 
+    	# control=chronos.control(nb.rate.cat=1), quiet=TRUE)
     
     # package results as list object to return
     res <- {}

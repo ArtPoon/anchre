@@ -15,15 +15,20 @@ import dateutil.parser as dateup
 import tempfile
 import os
 import sys
+import re
 import subprocess
 from pyphy import PyPhy
+from beauti import Beauti
 from Bio import Phylo, SeqIO
 from StringIO import StringIO
 
 class IronChef:
-    def __init__(self, handle, csv=None, iso_format=True, origin=date(1970,1,1),
-                 delimiter='_', field=-1, ft2path=None, Rpath=None, java=None,
-                 tmpfile='ironchef-tmp'):
+    def __init__(self,
+                 csv=None, iso_format=True, origin=date(1970,1,1),
+                 delimiter='_', field=-1,
+                 ft2path=None, Rpath=None, java=None,
+                 tmpfile='ironchef-tmp',
+                 beast_xml_template='beast-template.xml'):
         self.csv = csv
         self.iso_format = iso_format
         self.origin = origin
@@ -34,17 +39,18 @@ class IronChef:
         self.ft2path = ft2path
         self.Rpath = Rpath
         self.java = java
+
         self.pyphy = PyPhy(os.getcwd(), 1)  # instance of HyPhy
+        self.beauti = Beauti(beast_xml_template)
 
         # if given, parse dates from csv
         self.dates = {}
         if self.csv is not None:
             self.parse_date_csv()
 
-        # read sequence records from file handle
-        fasta = self.iter_fasta(handle)
-        self.seqs = {}
-        self.parse_fasta(fasta)
+        # store sequence records
+        self.fasta = []
+        self.seqs = {}  # grouped by collection date
 
         self.tmp = tempfile.gettempdir()
         self.tmpfile = os.path.join(self.tmp, tmpfile)
@@ -77,11 +83,11 @@ class IronChef:
 
             self.dates.update({row['header']: days})
 
-    def parse_fasta (self, fasta):
+    def parse_fasta (self):
         """
         :return:
         """
-        for h, s in fasta:
+        for h, s in self.fasta:
             if self.csv is None:
                 # parse date from header
                 this_date = int(h.split(self.delimiter)[self.field])
@@ -96,23 +102,26 @@ class IronChef:
 
             self.seqs[this_date].append(s)
 
-    def iter_fasta (self, handle):
+    def read (self, handle):
         """
-        Parse open file as FASTA.  Returns a generator
-        of handle, sequence tuples.
+        Parse open file as FASTA.  Clean sequence labels.
         """
+        self.fasta = []  # reset container
         sequence = ''
         for i in handle:
             if i[0] == '$': # skip h info
                 continue
             elif i[0] == '>' or i[0] == '#':
                 if len(sequence) > 0:
-                    yield h, sequence
+                    self.fasta.append([h, sequence])
                     sequence = ''   # reset containers
                 h = i.strip('\n')[1:]
+                h = re.sub('[-:|.]', '_', h)
             else:
                 sequence += i.strip('\n').upper()
-        yield h, sequence
+        self.fasta.append([h, sequence])
+        self.parse_fasta()
+
 
     def plurality_consensus(self, column, alphabet='ACGT', resolve=False):
         """
@@ -205,33 +214,42 @@ class IronChef:
             all_seqs.extend(sample)
         return self.consensus(all_seqs)
 
-    def output_seqs (self, to_file=True):
+    def output_fasta(self):
         """
-        Write out sequences to a temporary FASTA file.
+        Write contents of self.fasta to temporary file
         :return:
         """
+        with open(self.tmpfile, 'w') as f:
+            for h, s in self.fasta:
+                f.write('>%s\n%s\n' % (h, s))
 
+    def output_seqs (self):
+        """
+        Write out parsed sequences to temporary file.
+        :return:
+        """
         fasta = []
         for date, sample in self.seqs.iteritems():
             for i, seq in enumerate(sample):
                 fasta.append(['%d_%d' % (i, date), seq])
-
-        if to_file:
-            with open(self.tmpfile, 'w') as f:
-                for h, s in fasta:
-                    f.write('>%s\n%s\n' % (h, s))
-            return None
-        return fasta
+        with open(self.tmpfile, 'w') as f:
+            for h, s in fasta:
+                f.write('>%s\n%s\n' % (h, s))
 
 
-    def call_fasttree2 (self, handle):
+    def call_fasttree2 (self, raw=True):
         """
         Call FastTree2 on FASTA file
-        :param handle: open file handle to FASTA file
+        :param raw: if True, retain original sequence headers
         :return:
         """
+        if raw:
+            self.output_fasta()  # writes to self.tmpfile
+        else:
+            self.output_seqs()
+
         p = subprocess.Popen([self.ft2path, '-quiet', '-nosupport', '-nt', '-gtr'],
-                             stdin=handle,
+                             stdin=open(self.tmpfile, 'rU'),
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
@@ -269,10 +287,10 @@ class IronChef:
         out1 = os.path.join(self.tmp, 'ironchef-tmp.r2t.timetree')
         out2 = os.path.join(self.tmp, 'ironchef-tmp.r2t.csv')
 
-        os.chdir('java/')
-        p = subprocess.Popen([self.java, '-jar', 'RLRootToTip.jar', '-timetree', out1, '-newick', self.tmpfile, out2],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = p.communicate()
+        p = subprocess.check_call([self.java, '-jar', 'java/RLRootToTip.jar',
+                              '-timetree', out1,
+                              '-newick', self.tmpfile,
+                              out2])
 
         # read outputs
         with open(out1, 'rU') as handle:
@@ -280,6 +298,7 @@ class IronChef:
         with open(out2, 'rU') as handle:
             coef = handle.readlines()
 
+        # convert NEXUS to Newick string
         output = StringIO()
         Phylo.write(timetree, output, 'newick')
         res = {'timetree': output.getvalue()}
@@ -287,10 +306,54 @@ class IronChef:
         for i, key in enumerate(coef[0].strip('\n').split(',')):
             res.update({key: values[i]})
 
-        os.chdir('../')  # revert to parent dir
         return res
 
-    def call_beast(self, fasta):
+    def call_hyphy_ancre(self, tree, is_codon):
+        """
+
+        :param tree: Newick tree string
+        :param is_codon: if True, interpret alignment as codon sequences
+        :return: [ancseq] is a dictionary of header/sequence pairs.
+                   "Node0" keys the root node.
+                 [lf] is a serialization of the likelihood function.
+        """
+        # make sure the tree labels match the sequence headers
+        headers = [h for h, s in self.fasta]
+        headers.sort()
+        handle = StringIO(tree)
+        phy = Phylo.read(handle, 'newick')
+        tips = phy.get_terminals()
+        tipnames = [tip.name for tip in tips]
+        tipnames.sort()
+        if headers != tipnames:
+            print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
+            return None, None
+
+        ancseq, lf = self.pyphy.ancre(self.fasta, tree, is_codon)
+        return dict(ancseq), lf
+
+
+    def call_beast(self, sample_size=10):
+        """
+        Use BEAST to sample trees from the posterior density under a
+        strict molecular clock model.  If you want different settings,
+        modify the template XML file.
+        :return: a list of Newick tree strings
+        """
+        log, treelog = self.beauti.populate(fasta=self.fasta,
+                                            stem=os.path.join(self.tmp, 'beast'))
+        self.beauti.write(self.tmpfile)
+        # this was tested on version 1.8.1
+        p = subprocess.check_call([self.java, '-jar', 'java/beast.jar',
+                                   '-beagle_off',
+                                   '-overwrite',
+                                   self.tmpfile])
+        with open(treelog, 'rU') as f:
+            trees, mctree = self.beauti.parse_treelog(f, sample_size=sample_size)
+
+        return trees, mctree
+
+
 
 
 
@@ -316,34 +379,38 @@ def main():
 
     args = parser.parse_args()
 
-    csvfile = None
-    if args.csv is not None:
-        csvfile = open(args.csv, 'rU')
-    with open(args.fasta, 'rU') as infile:
-        ichef = IronChef(handle=infile, csv=csvfile, iso_format=args.iso,
-                         delimiter=args.sep, field=args.pos,
-                         ft2path=args.ft2, Rpath=args.R, java=args.java)
-    if csvfile:
-        csvfile.close()
+    csv = None if args.csv is None else open(args.csv, 'rU')
+    ichef = IronChef(csv=csv, iso_format=args.iso,
+                     delimiter=args.sep, field=args.pos,
+                     ft2path=args.ft2, Rpath=args.R, java=args.java)
+
+    # load sequences
+    with open(args.fasta, 'rU') as f:
+        ichef.read(f)
 
     # construct a tree
-    ichef.output_seqs(to_file=True)
-    with open(ichef.tmpfile, 'rU') as f:
-        tree = ichef.call_fasttree2(f)
+    tree = ichef.call_fasttree2(raw=True)
+    print tree
 
     # root the tree using tip dates
     rooted = ichef.call_rtt(tree)
+    print rooted
 
     # re-estimate node heights
     res = ichef.call_root2tip(rooted)
+    timetree = res['timetree']
+    print timetree
 
     # get the consensus sequence
     conseq = ichef.consensus_earliest()
+    print conseq
 
     # load sequences into HyPhy
-    fasta = ichef.output_seqs(to_file=False)
-    ancseq, lf = ichef.pyphy.ancre(fasta, rooted, is_codon=False)
+    ancseq, lf = ichef.call_hyphy_ancre(tree=rooted, is_codon=False)
+    print ancseq['Node0']
 
+    # BEAST!
+    ichef.call_beast()
 
 
 

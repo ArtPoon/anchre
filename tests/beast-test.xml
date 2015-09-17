@@ -1,0 +1,246 @@
+<beast>
+
+	
+	
+	<taxa id="taxa">
+		<taxon id="AF137634_p1c003_20_90"><date direction="forwards" units="days" value="90.0" /></taxon><taxon id="AF137631_p1c003_17_90"><date direction="forwards" units="days" value="90.0" /></taxon><taxon id="AF137725_p1p080_341_2400"><date direction="forwards" units="days" value="2400.0" /></taxon><taxon id="AF137724_p1p080_340_2400"><date direction="forwards" units="days" value="2400.0" /></taxon><taxon id="AF137729_p1p087_206_2610"><date direction="forwards" units="days" value="2610.0" /></taxon><taxon id="AF137741_p1p094_347_2820"><date direction="forwards" units="days" value="2820.0" /></taxon><taxon id="AF137759_p1p105_272_3150"><date direction="forwards" units="days" value="3150.0" /></taxon><taxon id="AF137758_p1p105_269_3150"><date direction="forwards" units="days" value="3150.0" /></taxon></taxa>
+
+	
+	
+	<alignment dataType="nucleotide" id="alignment">
+		<sequence><taxon idref="AF137634_p1c003_20_90" />
+			GAAGAAGAGGTAGTAATTAGATCTGAAAATTTCACGGACAATGCTAAAACCATAATAGTACAGCTGAAGGAGTCTGTAGTAATTAATTGTACAAGACCCAATAACAATACAAGAAAAAGTATACAGGTAGGACCAGGGAAAGCAATTTATACAACAGGAG</sequence><sequence><taxon idref="AF137631_p1c003_17_90" />
+			GAAGAAGAGGTAGTAATTAGATCTGAAAATTTCACGGACAATGCTAAAACCATAATAGTACAGCTGAAGGAGTCTGTAGTAATTAATTGTACAAGACCCAATAACAATACAAGAAAAAGTATACAGGTAGGACCAGGGAAGGCAATTTATACAACAGGAG</sequence><sequence><taxon idref="AF137725_p1p080_341_2400" />
+			GAAGAAGAGGTAGTAATTAGATCTGAAAATTTCACGAACAATGCTAAGACCATAATAGTACAGCTGAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAATACAAGAAGAAGTATAGCGGTAGGACCAGGGAGAGCATTTTATGCAACAGATA</sequence><sequence><taxon idref="AF137724_p1p080_340_2400" />
+			GAAAAAGAGGTAGTAATCAGATCTGAAAATTTCACGGACAATGCTAAAACCATAATAGTACAGCTGAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAATACAAGAAGAAGTATAGCGGTAGAACCAGGGAGAGCATTTTATGCAACAGATC</sequence><sequence><taxon idref="AF137729_p1p087_206_2610" />
+			GAAAAAGAGGTAATAATTAGATCTGAAAATTTCACGGACAATGCTAAAACCATAATAGTACAGCTGAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAATACAAGAAGAAGTATAGCGGTAGGACCAGGGAGAGCATTTTATGCAACAGATC</sequence><sequence><taxon idref="AF137741_p1p094_347_2820" />
+			GAAAAAGAGGTAGTAATCAGATCTGAAAATTTCACGGACAATGCTAAAACCATAATAGTACAGCTGAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAACACAAGAAGAAGTATAGCGGTAGGACCAGGGAGAGCATTTTATGCAACAGATC</sequence><sequence><taxon idref="AF137759_p1p105_272_3150" />
+			GAAAAAGAGGTAGTAATTAGATCTGAAAATTTCACGAACAATGCTAAAACCATAATAGTACAGCTAAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAATACAAGAAGAAGTATAGCAGTAGGACCAGGGAGAGCATTTTATGCAACAGATA</sequence><sequence><taxon idref="AF137758_p1p105_269_3150" />
+			GAAGAAGAGGTAGTAATTAGATCTGAAAATTTCACGAACAATGCTAAAACCATAATAGTACAGCTGAATGAGTCTGTAGTAATTAATTGTACAAGACCCAGTAACAATACAAGAAGAAGTATAGCGGTAGGACCAGGAAGAGCATTTTATGCAACAGATC</sequence></alignment>
+
+	
+	
+	<patterns from="1" id="patterns" strip="false">
+		<alignment idref="alignment" />
+	</patterns>
+
+	
+	
+	<constantSize id="initialDemo" units="days">
+		<populationSize>
+			<parameter id="initialDemo.popSize" value="100.0" />
+		</populationSize>
+	</constantSize>
+
+	
+	<rescaledTree id="startingTree">
+
+		
+		<upgmaTree>
+			<distanceMatrix correction="JC">
+				<patterns>
+
+					
+					<alignment idref="alignment" />
+				</patterns>
+			</distanceMatrix>
+		</upgmaTree>
+	</rescaledTree>
+
+	
+	<treeModel id="treeModel">
+		<upgmaTree idref="startingTree" />
+		<rootHeight>
+			<parameter id="treeModel.rootHeight" />
+		</rootHeight>
+		<nodeHeights internalNodes="true">
+			<parameter id="treeModel.internalNodeHeights" />
+		</nodeHeights>
+		<nodeHeights internalNodes="true" rootNode="true">
+			<parameter id="treeModel.allInternalNodeHeights" />
+		</nodeHeights>
+	</treeModel>
+
+	
+	<generalizedSkyLineLikelihood id="skyline" linear="false">
+		<populationSizes>
+			<parameter dimension="5" id="skyline.popSize" lower="0.0" value="31000.0" />
+		</populationSizes>
+		<groupSizes>
+			<parameter dimension="5" id="skyline.groupSize" />
+		</groupSizes>
+		<populationTree>
+			<treeModel idref="treeModel" />
+		</populationTree>
+	</generalizedSkyLineLikelihood>
+	<exponentialMarkovLikelihood id="eml1" jeffreys="true">
+		<chainParameter>
+			<parameter idref="skyline.popSize" />
+		</chainParameter>
+	</exponentialMarkovLikelihood>
+
+	
+	<strictClockBranchRates id="branchRates">
+		<rate>
+			<parameter id="clock.rate" lower="0.0" value="0.0010" />
+		</rate>
+	</strictClockBranchRates>
+
+	
+	<TN93Model id="tn93">
+		<frequencies>
+			<frequencyModel dataType="nucleotide">
+				<frequencies>
+					<parameter id="frequencies" value="0.25 0.25 0.25 0.25" />
+				</frequencies>
+			</frequencyModel>
+		</frequencies>
+		<kappa1>
+			<parameter id="kappa1" lower="0.0" value="2.0" />
+		</kappa1>
+		<kappa2>
+			<parameter id="kappa2" lower="0.0" value="2.0" />
+		</kappa2>
+	</TN93Model>
+
+	
+	<siteModel id="siteModel">
+		<substitutionModel>
+			<TN93Model idref="tn93" />
+		</substitutionModel>
+	</siteModel>
+
+	
+	<treeLikelihood id="treeLikelihood" useAmbiguities="false">
+		<patterns idref="patterns" />
+		<treeModel idref="treeModel" />
+		<siteModel idref="siteModel" />
+		<strictClockBranchRates idref="branchRates" />
+	</treeLikelihood>
+
+	
+	<operators id="operators" optimizationSchedule="default">
+		<scaleOperator scaleFactor="0.75" weight="0.1">
+			<parameter idref="kappa1" />
+		</scaleOperator>
+		<scaleOperator scaleFactor="0.75" weight="0.1">
+			<parameter idref="kappa2" />
+		</scaleOperator>
+		<deltaExchange delta="0.01" weight="0.1">
+			<parameter idref="frequencies" />
+		</deltaExchange>
+		<scaleOperator scaleFactor="0.75" weight="3">
+			<parameter idref="clock.rate" />
+		</scaleOperator>
+		<subtreeSlide gaussian="true" size="3100.0" weight="15">
+			<treeModel idref="treeModel" />
+		</subtreeSlide>
+		<narrowExchange weight="15">
+			<treeModel idref="treeModel" />
+		</narrowExchange>
+		<wideExchange weight="3">
+			<treeModel idref="treeModel" />
+		</wideExchange>
+		<wilsonBalding weight="3">
+			<treeModel idref="treeModel" />
+		</wilsonBalding>
+		<scaleOperator scaleFactor="0.75" weight="3">
+			<parameter idref="treeModel.rootHeight" />
+		</scaleOperator>
+		<uniformOperator weight="30">
+			<parameter idref="treeModel.internalNodeHeights" />
+		</uniformOperator>
+		<scaleOperator scaleFactor="0.75" weight="15">
+			<parameter idref="skyline.popSize" />
+		</scaleOperator>
+		<deltaExchange autoOptimize="false" delta="1" integer="true" weight="6">
+			<parameter idref="skyline.groupSize" />
+		</deltaExchange>
+		<upDownOperator scaleFactor="0.75" weight="3">
+			<up>
+				<parameter idref="clock.rate" />
+			</up>
+			<down>
+				<parameter idref="treeModel.allInternalNodeHeights" />
+			</down>
+		</upDownOperator>
+	</operators>
+
+	
+	<mcmc autoOptimize="true" chainLength="100000" id="mcmc">
+		<posterior id="posterior">
+			<prior id="prior">
+				<logNormalPrior mean="1.0" meanInRealSpace="false" offset="0.0" stdev="1.25">
+					<parameter idref="kappa1" />
+				</logNormalPrior>
+				<logNormalPrior mean="1.0" meanInRealSpace="false" offset="0.0" stdev="1.25">
+					<parameter idref="kappa2" />
+				</logNormalPrior>
+				<uniformPrior lower="0.0" upper="1.0">
+					<parameter idref="frequencies" />
+				</uniformPrior>
+				<uniformPrior lower="0.0" upper="10.0">
+					<parameter idref="clock.rate" />
+				</uniformPrior>
+				<uniformPrior lower="0.0" upper="1.0E100">
+					<parameter idref="skyline.popSize" />
+				</uniformPrior>
+				<generalizedSkyLineLikelihood idref="skyline" />
+				<exponentialMarkovLikelihood idref="eml1" />
+			</prior>
+			<likelihood id="likelihood">
+				<treeLikelihood idref="treeLikelihood" />
+			</likelihood>
+		</posterior>
+		<operators idref="operators" />
+
+		
+		<log id="screenLog" logEvery="10000">
+			<column dp="4" label="Posterior" width="12">
+				<posterior idref="posterior" />
+			</column>
+			<column dp="4" label="Prior" width="12">
+				<prior idref="prior" />
+			</column>
+			<column dp="4" label="Likelihood" width="12">
+				<likelihood idref="likelihood" />
+			</column>
+			<column label="rootHeight" sf="6" width="12">
+				<parameter idref="treeModel.rootHeight" />
+			</column>
+			<column label="clock.rate" sf="6" width="12">
+				<parameter idref="clock.rate" />
+			</column>
+		</log>
+
+		
+		<log fileName="template.log" filename="tests/beast-test.log" id="fileLog" logEvery="1000" overwrite="false">
+			<posterior idref="posterior" />
+			<prior idref="prior" />
+			<likelihood idref="likelihood" />
+			<parameter idref="treeModel.rootHeight" />
+			<parameter idref="skyline.popSize" />
+			<parameter idref="skyline.groupSize" />
+			<parameter idref="kappa1" />
+			<parameter idref="kappa2" />
+			<parameter idref="frequencies" />
+			<parameter idref="clock.rate" />
+			<treeLikelihood idref="treeLikelihood" />
+			<generalizedSkyLineLikelihood idref="skyline" />
+		</log>
+
+		
+		<logTree fileName="tests/beast-test.trees" id="treeFileLog" logEvery="1000" nexusFormat="true" sortTranslationTable="true">
+			<treeModel idref="treeModel" />
+			<trait name="rate" tag="rate">
+				<strictClockBranchRates idref="branchRates" />
+			</trait>
+			<posterior idref="posterior" />
+		</logTree>
+	</mcmc>
+	<report>
+		<property name="timer">
+			<mcmc idref="mcmc" />
+		</property>
+	</report>
+</beast>
