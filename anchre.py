@@ -325,11 +325,14 @@ class Anchre:
         # make sure the tree labels match the sequence headers
         headers = [h for h, s in self.fasta]
         headers.sort()
+        
+        # cast Newick tree string as Phylo object to extract tip labels
         handle = StringIO(tree)
         phy = Phylo.read(handle, 'newick')
         tips = phy.get_terminals()
         tipnames = [tip.name for tip in tips]
         tipnames.sort()
+        
         if headers != tipnames:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
             return None, None
@@ -440,7 +443,11 @@ def main():
     # load sequences into HyPhy
     print 'ML anc res'
     ancseq, lf = anchre.call_hyphy_ancre(tree=rooted, model_spec='010020', is_codon=False)
-    fanc.write('>ML_rooted\n%s\n' % (ancseq['Node0'], ))
+    try:
+        fanc.write('>ML_rooted\n%s\n' % (ancseq['Node0'], ))
+    except:
+        print ancseq
+        raise
 
     ancseq, _ = anchre.call_hyphy_ancre(tree=timetree, model_spec='010020', is_codon=False)
     fanc.write('>ML_timetree\n%s\n' % (ancseq['Node0'], ))

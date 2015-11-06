@@ -142,25 +142,19 @@ class PyPhy:
 
         self.call('fprintf(stdout, ancf);')
 
-        # parse this myself until HyPhy is fixed
-        taxa = []
-        seqs = []
-        in_data_block = False
+        anc = {}
+        header = None
+        sequence = ''
         lines = self.stdout().split('\n')
-        for i, line in enumerate(lines):
-            if line.startswith('BEGIN TAXA'):
-                taxa = [x.strip("'") for x in lines[i+3].strip('\t;').split()]
-                continue
-            if line.startswith('MATRIX'):
-                in_data_block = True
-                continue
-            if in_data_block:
-                if line.startswith('END'):
-                    # exiting block
-                    break
-                seqs.append(line.strip(' \n;'))
-
-        anc = zip(taxa, seqs)
+        for line in lines:
+            if line.startswith('#'):
+                if sequence:
+                    anc.update({header: sequence})
+                    sequence = ''
+                header = line.strip('#\n')
+            else:
+                sequence += line.upper()
+        anc.update({header: sequence})
 
         # check for errors
         stderr = self.stderr()
