@@ -104,6 +104,7 @@ class Anchre:
             self.seqs[this_date].append(s)
 
         dates = self.seqs.keys()
+        assert len(dates) > 1, 'Error: sequences in FASTA have only one collection date!'
         dates.sort(reverse=True)
         self.last_date = dates[0]
 
