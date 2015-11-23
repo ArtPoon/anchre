@@ -50,7 +50,8 @@ class Anchre:
 
         # store sequence records
         self.fasta = []
-        self.seqs = {}  # grouped by collection date
+        self.internal_fasta = []  # with modified sequence headers
+        self.dated_seqs = {}  # grouped by collection date
         self.last_date = None
 
         self.tmp = tempfile.gettempdir()
@@ -84,29 +85,6 @@ class Anchre:
 
             self.dates.update({row['header']: days})
 
-    def parse_fasta (self):
-        """
-        :return:
-        """
-        for h, s in self.fasta:
-            if self.csv is None:
-                # parse date from header
-                this_date = int(h.split(self.delimiter)[self.field])
-            else:
-                try:
-                    this_date = self.dates[h]
-                except:
-                    print 'ERROR: sequence header', h, 'not found in dates parsed from CSV'
-                    raise
-            if this_date not in self.seqs:
-                self.seqs.update({this_date: []})
-
-            self.seqs[this_date].append(s)
-
-        dates = self.seqs.keys()
-        assert len(dates) > 1, 'Error: sequences in FASTA have only one collection date!'
-        dates.sort(reverse=True)
-        self.last_date = dates[0]
 
     def read (self, handle):
         """
@@ -122,12 +100,46 @@ class Anchre:
                     self.fasta.append([h, sequence])
                     sequence = ''   # reset containers
                 h = i.strip('\n')[1:]
-                h = re.sub('[-:|.]', '_', h)
             else:
                 sequence += i.strip('\n').upper()
         self.fasta.append([h, sequence])
-        self.parse_fasta()
+        self.parse_dates()
 
+
+    def parse_dates (self, origin=date(1970, 1, 1)):
+        """
+        Parse date fields from sequence headers in FASTA object.
+        """
+        self.dated_seqs = {}
+        for h, s in self.fasta:
+            if self.csv:
+                try:
+                    date_field = self.dates[h]
+                except:
+                    print 'ERROR: sequence header', h, 'not found in dates parsed from CSV'
+                    raise
+            else:
+                # parse date from sequence headers
+                date_field = h.split(self.delimiter)[self.field]
+
+            # parse value in date field
+            if self.iso_format:
+                year, month, day = map(int, date_field.split('-'))
+                this_date = date(year, month, day)
+                days_since = (this_date - origin).days
+            else:
+                # expressed as number of days since some time in the past (BEAST style)
+                days_since = int(date_field)
+
+            if days_since not in self.dated_seqs:
+                self.dated_seqs.update({days_since: []})
+
+            self.dated_seqs[days_since].append(s)
+
+        dates = self.dated_seqs.keys()
+        assert len(dates) > 1, 'Error: sequences in FASTA have only one collection date!'
+        dates.sort(reverse=True)
+        self.last_date = dates[0]
 
     def plurality_consensus(self, column, alphabet='ACGT', resolve=False):
         """
@@ -192,9 +204,9 @@ class Anchre:
         return "".join(consen)
 
     def earliest_sample (self):
-        dates = self.seqs.keys()
+        dates = self.dated_seqs.keys()
         dates.sort()  # defaults to increasing order
-        return self.seqs[dates[0]]
+        return self.dated_seqs[dates[0]]
 
 
     def consensus_earliest (self):
@@ -203,7 +215,7 @@ class Anchre:
         :param fasta:
         :return:
         """
-        if not self.seqs:
+        if not self.dated_seqs:
             # no sequences have been parsed
             return None
 
@@ -216,7 +228,7 @@ class Anchre:
         :return:
         """
         all_seqs = []
-        for date, sample in self.seqs.iteritems():
+        for date, sample in self.dated_seqs.iteritems():
             all_seqs.extend(sample)
         return self.consensus(all_seqs)
 
@@ -234,16 +246,17 @@ class Anchre:
         Write out parsed sequences to temporary file.
         :return:
         """
-        fasta = []
-        for date, sample in self.seqs.iteritems():
+        self.internal_fasta = []
+        for date, sample in self.dated_seqs.iteritems():
             for i, seq in enumerate(sample):
-                fasta.append(['%d_%d' % (i, date), seq])
+                self.internal_fasta.append(['%d_%d' % (i, date), seq])
+
         with open(self.tmpfile, 'w') as f:
-            for h, s in fasta:
+            for h, s in self.internal_fasta:
                 f.write('>%s\n%s\n' % (h, s))
 
 
-    def call_fasttree2 (self, raw=True):
+    def call_fasttree2 (self, raw=False):
         """
         Call FastTree2 on FASTA file
         :param raw: if True, retain original sequence headers
@@ -316,24 +329,27 @@ class Anchre:
 
     def call_hyphy_ancre(self, tree, model_spec='010010', is_codon=False):
         """
-
+        Ancestral reconstruction with HyPhy
         :param tree: Newick tree string
         :param is_codon: if True, interpret alignment as codon sequences
         :return: [ancseq] is a dictionary of header/sequence pairs.
                    "Node0" keys the root node.
                  [lf] is a serialization of the likelihood function.
         """
-        # make sure the tree labels match the sequence headers
-        headers = [h for h, s in self.fasta]
-        headers.sort()
-        
+
         # cast Newick tree string as Phylo object to extract tip labels
         handle = StringIO(tree)
         phy = Phylo.read(handle, 'newick')
         tips = phy.get_terminals()
         tipnames = [tip.name for tip in tips]
         tipnames.sort()
-        
+
+        # make sure the tree labels match the sequence headers
+        # FIXME: we have two versions of FASTA, self.fasta and self.internal_fasta
+        # FIXME:  that differ in sequence headers only; see output_seqs()
+        # FIXME:  this is brittle!
+        headers = [h for h, s in self.internal_fasta]
+        headers.sort()
         if headers != tipnames:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
             return None, None
@@ -420,7 +436,7 @@ def main():
 
     # construct a tree
     print 'fasttree2'
-    tree = anchre.call_fasttree2(raw=True)
+    tree = anchre.call_fasttree2()
     #print tree
 
     # root the tree using tip dates

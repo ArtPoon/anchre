@@ -117,6 +117,9 @@ class PyPhy:
         # FIXME: this isn't working (see hyphy issue #329)
         self.call('DATA_FILE_PRINT_FORMAT=0;')
 
+        print fasta
+        print newick
+
         # set up analysis
         self.read_data(fasta, is_codon)
         self.set_model(model_spec=model_spec, is_codon=is_codon)
@@ -145,16 +148,39 @@ class PyPhy:
         anc = {}
         header = None
         sequence = ''
+
         lines = self.stdout().split('\n')
-        for line in lines:
-            if line.startswith('#'):
-                if sequence:
-                    anc.update({header: sequence})
-                    sequence = ''
-                header = line.strip('#\n')
-            else:
-                sequence += line.upper()
-        anc.update({header: sequence})
+        print lines
+        if False:
+            # parse NEXUS output
+            taxa = []
+            seqs = []
+            in_data_block = False
+            for i, line in enumerate(lines):
+                if line.startswith('BEGIN TAXA'):
+                    taxa = [x.strip("'") for x in lines[i+3].strip('\t;').split()]
+                    continue
+                if line.startswith('MATRIX'):
+                    in_data_block = True
+                    continue
+                if in_data_block:
+                    if line.startswith('END'):
+                        # exiting block
+                        break
+                    seqs.append(line.strip(' \n;'))
+            anc = zip(taxa, seqs)
+        else:
+            # parse MEGA or FASTA output
+            for line in lines:
+                if line.startswith('#') or line.startswith('>'):
+                    if sequence:
+                        anc.update({header: sequence})
+                        sequence = ''
+                    header = line.strip('#>\n')
+                else:
+                    sequence += line.upper()
+            # do last record
+            anc.update({header: sequence})
 
         # check for errors
         stderr = self.stderr()
