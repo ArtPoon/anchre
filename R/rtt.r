@@ -16,6 +16,8 @@ tree <- read.tree(text=input.nwk)
 
 
 # extract tip dates from labels
+# assumes labels are underscore delimited and date is expressed
+#  as integer number of days since some time in the past
 tips <- tree$tip.label
 tip.dates <- sapply(tips, function(s) {
 	items <- strsplit(s, split='_')[[1]]

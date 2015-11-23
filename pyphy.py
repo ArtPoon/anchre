@@ -57,8 +57,10 @@ class PyPhy:
         :return: Number of sequences read from string
         """
         input = ''
-        for h, s in fasta:
-            input += '>%s\n%s\n' % (h, s)
+        # note this is a dictionary object
+        for v in fasta.itervalues():
+            input += '>%s\n%s\n' % (v['header'], v['sequence'])
+
         self.call('DataSet %s = ReadFromString("%s");' % (self.dsid, input))
         if is_codon:
             # assumes universal code
@@ -117,9 +119,6 @@ class PyPhy:
         # FIXME: this isn't working (see hyphy issue #329)
         self.call('DATA_FILE_PRINT_FORMAT=0;')
 
-        print fasta
-        print newick
-
         # set up analysis
         self.read_data(fasta, is_codon)
         self.set_model(model_spec=model_spec, is_codon=is_codon)
@@ -150,7 +149,6 @@ class PyPhy:
         sequence = ''
 
         lines = self.stdout().split('\n')
-        print lines
         if False:
             # parse NEXUS output
             taxa = []

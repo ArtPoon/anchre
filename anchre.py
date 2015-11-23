@@ -49,9 +49,7 @@ class Anchre:
             self.parse_date_csv()
 
         # store sequence records
-        self.fasta = []
-        self.internal_fasta = []  # with modified sequence headers
-        self.dated_seqs = {}  # grouped by collection date
+        self.fasta = {}
         self.last_date = None
 
         self.tmp = tempfile.gettempdir()
@@ -72,74 +70,92 @@ class Anchre:
             sys.exit()
 
 
-    def parse_date_csv (self):
+    def parse_date(self, date_str):
         """
-        Parse dates from CSV
+        Convert a string representation of a sample collection date into
+        an integer value (number of days since some time in the past).
+        """
+        if self.iso_format:
+            try:
+                days = (dateup.parse(date_str).date() - self.origin).days
+            except ValueError:
+                print 'ERROR: Failed to parse date', date_str
+                raise
+        else:
+            # expressed as number of days since some time in the past (BEAST style)
+            try:
+                days = int(date_str)
+            except:
+                print 'ERROR: Expected integer value for sequence date, found', date_str
+                raise
+        return days
+
+    def parse_dates_csv (self):
+        """
+        Parse dates from CSV.
         """
         reader = DictReader(open(self.csv, 'rU'))
         for row in reader:
-            if self.iso_format:
-                days = dateup.parse(row['date']).date() - self.origin
-            else:
-                days = int(row['date'])
-
-            self.dates.update({row['header']: days})
+            self.dates.update({row['header']: self.parse_date(row['date'])})
 
 
     def read (self, handle):
         """
         Parse open file as FASTA.  Clean sequence labels.
         """
-        self.fasta = []  # reset container
+        self.fasta = {}  # reset container
+        h = None
         sequence = ''
-        for i in handle:
-            if i[0] == '$': # skip h info
+        count = 0
+        for line in handle:
+            if line.startswith('$'):  # skip comments
                 continue
-            elif i[0] == '>' or i[0] == '#':
-                if len(sequence) > 0:
-                    self.fasta.append([h, sequence])
-                    sequence = ''   # reset containers
-                h = i.strip('\n')[1:]
+
+            if line.startswith('>') or line.startswith('#'):
+                if sequence:
+                    days = self.get_date(h)
+                    self.fasta.update({h: {'header': '%d_%d' % (count, days),
+                                           'sequence': sequence,
+                                           'days': days}})
+                    sequence = ''   # reset container
+
+                h = line.strip('>#\n')
+                count += 1
             else:
-                sequence += i.strip('\n').upper()
-        self.fasta.append([h, sequence])
-        self.parse_dates()
+                sequence += line.strip('\n').upper()
+
+        # append last entry
+        days = self.get_date(h)
+        self.fasta.update({h: {'header': '%d_%d' % (count, days),
+                               'sequence': sequence,
+                               'days': days}})
+
+        # determine most recent sample date
+        all_dates = [v['days'] for v in self.fasta.itervalues()]
+        assert len(set(all_dates)) > 0, 'ERROR: Only one sample date in data'
+        all_dates.sort(reverse=True)
+        self.last_date = all_dates[0]
 
 
-    def parse_dates (self, origin=date(1970, 1, 1)):
+
+    def get_date (self, h):
         """
-        Parse date fields from sequence headers in FASTA object.
+        If dates were provided as a CSV input file, then return the
+        date associated with the sequence header supplied as the first argument.
+        Otherwise, parse date field from sequence header in FASTA object.
         """
-        self.dated_seqs = {}
-        for h, s in self.fasta:
-            if self.csv:
-                try:
-                    date_field = self.dates[h]
-                except:
-                    print 'ERROR: sequence header', h, 'not found in dates parsed from CSV'
-                    raise
-            else:
-                # parse date from sequence headers
-                date_field = h.split(self.delimiter)[self.field]
+        if self.csv:
+            try:
+                # this will always be days since X
+                return self.dates[h]
+            except:
+                print 'ERROR: sequence header', h, 'not found in dates parsed from CSV'
+                raise
 
-            # parse value in date field
-            if self.iso_format:
-                year, month, day = map(int, date_field.split('-'))
-                this_date = date(year, month, day)
-                days_since = (this_date - origin).days
-            else:
-                # expressed as number of days since some time in the past (BEAST style)
-                days_since = int(date_field)
+        # otherwise, parse date from sequence headers
+        date_field = h.split(self.delimiter)[self.field]
+        return self.parse_date(date_field)
 
-            if days_since not in self.dated_seqs:
-                self.dated_seqs.update({days_since: []})
-
-            self.dated_seqs[days_since].append(s)
-
-        dates = self.dated_seqs.keys()
-        assert len(dates) > 1, 'Error: sequences in FASTA have only one collection date!'
-        dates.sort(reverse=True)
-        self.last_date = dates[0]
 
     def plurality_consensus(self, column, alphabet='ACGT', resolve=False):
         """
@@ -204,9 +220,14 @@ class Anchre:
         return "".join(consen)
 
     def earliest_sample (self):
-        dates = self.dated_seqs.keys()
+        # determine the earliest sample date
+        dates = [v['days'] for v in self.fasta.itervalues()]
         dates.sort()  # defaults to increasing order
-        return self.dated_seqs[dates[0]]
+        earliest_date = dates[0]
+
+        # retrieve all sequences with this date
+        first_sample = [v['sequence'] for k, v in self.fasta.iteritems() if v['days'] == earliest_date]
+        return first_sample
 
 
     def consensus_earliest (self):
@@ -215,7 +236,7 @@ class Anchre:
         :param fasta:
         :return:
         """
-        if not self.dated_seqs:
+        if not self.fasta:
             # no sequences have been parsed
             return None
 
@@ -224,36 +245,20 @@ class Anchre:
 
     def consensus_all (self):
         """
-        Return the consensus of all samples.
+        Return the consensus of all sequences.
         :return:
         """
-        all_seqs = []
-        for date, sample in self.dated_seqs.iteritems():
-            all_seqs.extend(sample)
+        all_seqs = [v['sequence'] for v in self.fasta.itervalues()]
         return self.consensus(all_seqs)
 
     def output_fasta(self):
         """
         Write contents of self.fasta to temporary file
-        :return:
+        :return:  Absolute path to temporary file
         """
         with open(self.tmpfile, 'w') as f:
-            for h, s in self.fasta:
-                f.write('>%s\n%s\n' % (h, s))
-
-    def output_seqs (self):
-        """
-        Write out parsed sequences to temporary file.
-        :return:
-        """
-        self.internal_fasta = []
-        for date, sample in self.dated_seqs.iteritems():
-            for i, seq in enumerate(sample):
-                self.internal_fasta.append(['%d_%d' % (i, date), seq])
-
-        with open(self.tmpfile, 'w') as f:
-            for h, s in self.internal_fasta:
-                f.write('>%s\n%s\n' % (h, s))
+            for i, (h, data) in enumerate(self.fasta.iteritems()):
+                f.write('>%s\n%s\n' % (data['header'], data['sequence']))
 
 
     def call_fasttree2 (self, raw=False):
@@ -262,10 +267,7 @@ class Anchre:
         :param raw: if True, retain original sequence headers
         :return:
         """
-        if raw:
-            self.output_fasta()  # writes to self.tmpfile
-        else:
-            self.output_seqs()
+        self.output_fasta()  # writes to self.tmpfile
 
         p = subprocess.Popen([self.ft2path, '-quiet', '-nosupport', '-nt', '-gtr'],
                              stdin=open(self.tmpfile, 'rU'),
@@ -345,10 +347,7 @@ class Anchre:
         tipnames.sort()
 
         # make sure the tree labels match the sequence headers
-        # FIXME: we have two versions of FASTA, self.fasta and self.internal_fasta
-        # FIXME:  that differ in sequence headers only; see output_seqs()
-        # FIXME:  this is brittle!
-        headers = [h for h, s in self.internal_fasta]
+        headers = [v['header'] for v in self.fasta.itervalues()]
         headers.sort()
         if headers != tipnames:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
@@ -410,8 +409,10 @@ def main():
     parser.add_argument('-iso', action='store_true',
                         help='Specify date format as either ISO or number of days since some'
                              'time in the past.')
+    parser.add_argument('-origin', help='ISO formatted date.  For expressing ISO dates as number of days '
+                                        'since date of origin.', default=None)
     parser.add_argument('-sep', choices=['_', '.', '-', ';', ':', ' '], default='_',
-                        help='Sequence header field separator.')
+                        help='Sequence header field separator; make sure to enclose in single quotes.')
     parser.add_argument('-pos', type=int, default=-1, help='Python-style index for date in sequence header.')
     parser.add_argument('-ft2', default='/usr/local/bin/fasttree2', help='Absolute path to FastTree2')
     parser.add_argument('-R', default='/usr/bin/Rscript', help='Absolute path to Rscript')
@@ -419,11 +420,17 @@ def main():
 
     args = parser.parse_args()
 
+    if args.sep != '_':
+        print 'Using custom separator "%s"' % (args.sep, )
+
+    if args.iso:
+        print 'Expecting ISO formatted dates.'
 
     csv = None if args.csv is None else open(args.csv, 'rU')
     anchre = Anchre(csv=csv, iso_format=args.iso,
                      delimiter=args.sep, field=args.pos,
-                     ft2path=args.ft2, Rpath=args.R, java=args.java)
+                     ft2path=args.ft2, Rpath=args.R, java=args.java,
+                     origin = dateup.parse(args.origin).date() if args.origin else date(1970, 1, 1))
 
     # load sequences
     with open(args.fasta, 'rU') as f:
@@ -436,7 +443,7 @@ def main():
 
     # construct a tree
     print 'fasttree2'
-    tree = anchre.call_fasttree2()
+    tree = anchre.call_fasttree2()  # writes sequences to temporary FASTA file
     #print tree
 
     # root the tree using tip dates

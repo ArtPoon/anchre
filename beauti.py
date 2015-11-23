@@ -31,8 +31,10 @@ class Beauti:
         t_aln = self.template.find('alignment')
         t_aln._children = []
 
-        for h, s in fasta:
-            date_val = float(h.split('_')[-1])
+        for k, v in fasta.iteritems():
+            h = v['header']
+            s = v['sequence']
+            date_val = float(v['days'])
             date = Node('date', {'units': time_unit,
                                  'direction':'forwards',
                                  'value':str(date_val)})
@@ -232,7 +234,7 @@ def main():
     with open('tests/beast-test.xml', 'w') as f:
         beauti.write(f)
 
-    p = subprocess.check_call(['java', '-jar', 'java/beast.jar',
+    p = subprocess.check_call(['java', '-jar', '-java', 'java/beast.jar',
                                '-beagle_off',
                                '-overwrite',
                                'tests/beast-test.xml'])
