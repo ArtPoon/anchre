@@ -351,7 +351,9 @@ class Anchre:
         headers.sort()
         if headers != tipnames:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
-            return None, None
+            print headers[:5]
+            print tipnames[:5]
+            sys.exit()
 
         ancseq, lf = self.pyphy.ancre(fasta=self.fasta, newick=tree,
                                       model_spec=model_spec, is_codon=is_codon)
