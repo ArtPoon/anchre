@@ -132,7 +132,7 @@ class Anchre:
 
         # determine most recent sample date
         all_dates = [v['days'] for v in self.fasta.itervalues()]
-        assert len(set(all_dates)) > 0, 'ERROR: Only one sample date in data'
+        assert len(set(all_dates)) > 1, 'ERROR: Only one sample date in data'
         all_dates.sort(reverse=True)
         self.last_date = all_dates[0]
 
