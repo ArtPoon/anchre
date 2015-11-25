@@ -21,6 +21,7 @@ from pyphy import PyPhy
 from beauti import Beauti
 from Bio import Phylo, SeqIO
 from StringIO import StringIO
+import random
 
 class Anchre:
     def __init__(self,
@@ -113,6 +114,7 @@ class Anchre:
 
             if line.startswith('>') or line.startswith('#'):
                 if sequence:
+                    # create record
                     days = self.get_date(h)
                     self.fasta.update({h: {'header': '%d_%d' % (count, days),
                                            'sequence': sequence,
@@ -156,6 +158,19 @@ class Anchre:
         date_field = h.split(self.delimiter)[self.field]
         return self.parse_date(date_field)
 
+
+    def newick2phylo (self, nwk):
+        handle = StringIO(nwk)
+        phy = Phylo.read(handle, 'newick')
+        return phy
+
+    def phylo2newick(self, t):
+        """
+        Convert Phylo into Newick tree string.
+        """
+        output = StringIO()
+        Phylo.write(t, output, 'newick')
+        return output.getvalue()
 
     def plurality_consensus(self, column, alphabet='ACGT', resolve=False):
         """
@@ -320,9 +335,8 @@ class Anchre:
             coef = handle.readlines()
 
         # convert NEXUS to Newick string
-        output = StringIO()
-        Phylo.write(timetree, output, 'newick')
-        res = {'timetree': output.getvalue()}
+        newick = self.phylo2newick(timetree)
+        res = {'timetree': newick}
         values = coef[1].strip('\n').split(',')
         for i, key in enumerate(coef[0].strip('\n').split(',')):
             res.update({key: values[i]})
@@ -340,8 +354,7 @@ class Anchre:
         """
 
         # cast Newick tree string as Phylo object to extract tip labels
-        handle = StringIO(tree)
-        phy = Phylo.read(handle, 'newick')
+        phy = self.newick2phylo(tree)
         tips = phy.get_terminals()
         tipnames = [tip.name for tip in tips]
         tipnames.sort()
@@ -351,8 +364,7 @@ class Anchre:
         headers.sort()
         if headers != tipnames:
             print 'Warning: tree labels do not match FASTA in call_hyphy_ancre()'
-            print headers[:5]
-            print tipnames[:5]
+            print set(headers).difference(set(tipnames))
             sys.exit()
 
         ancseq, lf = self.pyphy.ancre(fasta=self.fasta, newick=tree,
@@ -391,6 +403,51 @@ class Anchre:
             trees = self.beauti.parse_treelog(f, sample_size=sample_size)
 
         return traces, trees
+
+
+def coalesce_nodes (parent, n1, n2, blen = 1E-5):
+    """
+    Insert common ancestor for given nodes.  New node will
+    be assigned previous parent.  Total branch length is conserved.
+    Returns the new node.
+    """
+    clade_cls = type(parent)
+    # create new ancestor
+    new_node = clade_cls(name=None, branch_length = blen)
+    new_node.clades.append(n1)
+    new_node.clades.append(n2)
+    # update original parent
+    parent.clades.append(new_node)
+    parent.clades.remove(n1)
+    parent.clades.remove(n2)
+
+    # rescale branch lengths
+    if n1.branch_length > blen:
+        n1.branch_length -= blen
+    else:
+        # avoid negative branch lengths
+        n1.branch_length = blen
+
+    if n2.branch_length > blen:
+        n2.branch_length -= blen
+    else:
+        n2.branch_length = blen
+
+
+def resolve_polytomies(t):
+    """
+    Insert random bifurcating subset tree at all polytomies in given tree.
+    """
+    nodes = t.get_nonterminals()
+    for node in nodes:
+        while 1:
+            clades = node.clades
+            if len(clades) > 2:
+                # node is a polytomy
+                n1, n2 = random.sample(clades, 2)
+                coalesce_nodes(node, n1, n2)
+            else:
+                break
 
 
 
@@ -449,14 +506,22 @@ def main():
     #print tree
 
     # root the tree using tip dates
-    print 'rtt'
-    rooted = anchre.call_rtt(tree)
+    #print 'rtt'
+    #rooted = anchre.call_rtt(tree)
     #print rooted
+
+    # binarize the tree using random coalescence
+    bintree = anchre.newick2phylo(tree)
+    resolve_polytomies(bintree)
+    tree2 = anchre.phylo2newick(bintree)
 
     # re-estimate node heights
     print 'root2tip'
-    res = anchre.call_root2tip(rooted)
+    #res = anchre.call_root2tip(rooted)
+    res = anchre.call_root2tip(tree2)
     timetree = res['timetree']
+    #print timetree
+
     origin = res['x-intercept']
     fmrca.write('root2tip,%s,,\n' % (origin,))
 
@@ -468,7 +533,7 @@ def main():
 
     # load sequences into HyPhy
     print 'ML anc res'
-    ancseq, lf = anchre.call_hyphy_ancre(tree=rooted, model_spec='010020', is_codon=False)
+    ancseq, lf = anchre.call_hyphy_ancre(tree=tree2, model_spec='010020', is_codon=False)
     try:
         fanc.write('>ML_rooted\n%s\n' % (ancseq['Node0'], ))
     except:

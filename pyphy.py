@@ -151,7 +151,7 @@ class PyPhy:
         lines = self.stdout().split('\n')
         if lines[0].startswith('#NEXUS'):
             # parse NEXUS output
-            print 'parsing NEXUS'
+            #print 'parsing NEXUS'
             taxa = []
             seqs = []
             in_data_block = False
@@ -170,7 +170,7 @@ class PyPhy:
             anc = zip(taxa, seqs)
         else:
             # parse MEGA or FASTA output
-            print 'parsing MEGA/FASTA'
+            #print 'parsing MEGA/FASTA'
             for line in lines:
                 if line.startswith('#') or line.startswith('>'):
                     if sequence:
