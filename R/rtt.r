@@ -128,5 +128,8 @@ rtt <- function (t, tip.dates, ncpu = 1, objective = "correlation",
 
 res <- rtt(tree, tip.dates)
 
-write.tree(res$tree)  # to stdout
+# in case of polytomies, binarize the tree
+res.bin <- multi2di(res$tree)
+
+write.tree(res.bin)  # to stdout
 #write.tree(res$dated.tree)
