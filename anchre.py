@@ -376,25 +376,38 @@ class Anchre:
                    screen_step=1E5,
                    log_step=1E4,
                    treelog_step=1E4,
-                   sample_size=100):
+                   sample_size=100,
+                   root_height=None):
         """
         Use BEAST to sample trees from the posterior density under a
         strict molecular clock model.  If you want different settings,
         modify the template XML file.
         :return: a list of Newick tree strings
         """
-        log, treelog = self.beauti.populate(fasta=self.fasta,
-                                            stem=os.path.join(self.tmp, 'beast'),
-                                            chain_length=chain_length,
-                                            screen_step=screen_step,
-                                            log_step=log_step,
-                                            treelog_step=treelog_step)
+        log, treelog = self.beauti.populate(
+            fasta=self.fasta,
+            stem=os.path.join(self.tmp, 'beast'),
+            chain_length=chain_length,
+            screen_step=screen_step,
+            log_step=log_step,
+            treelog_step=treelog_step,
+            root_height=root_height
+        )
+
         self.beauti.write(self.tmpfile)
         # this was tested on version 1.8.1
-        p = subprocess.check_call([self.java, '-jar', 'java/beast.jar',
+        # 1.8.1 has a bug that results in zombie processes that fail to terminate - use 1.8.2
+        p = subprocess.Popen([self.java, '-Xms64m', '-Xmx256m', '-jar', 'java/beast.jar',
                                    '-beagle_off',
                                    '-overwrite',
-                                   self.tmpfile], stdout=subprocess.PIPE)
+                                   self.tmpfile],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        for i, line in enumerate(p.stdout):
+            if i % 10 == 0:
+                sys.stdout.write('.')  # progress monitor
+
+        sys.stdout.write('\n')
+
 
         with open(log, 'rU') as f:
             traces = self.beauti.parse_log(f)
@@ -477,14 +490,23 @@ def main():
     parser.add_argument('-R', default='/usr/bin/Rscript', help='Absolute path to Rscript')
     parser.add_argument('-java', default='/usr/bin/java', help='Absolute path to Java interpreter')
     parser.add_argument('-xml', default='xml/beast-template.xml', help='BEAST XML template')
+    parser.add_argument('-rhlo', type=float, default=0., help='Lower bound on root height (defaults to 0).')
+    parser.add_argument('-rhhi', type=float, default=1E6, help='Upper bound on root height (defaults to 1E6)')
 
     args = parser.parse_args()
 
+    # initial QC
     if args.sep != '_':
         print 'Using custom separator "%s"' % (args.sep, )
 
     if args.iso:
         print 'Expecting ISO formatted dates.'
+
+    if args.rhlo > args.rhhi:
+        print 'Lower bound (%d) must be equal to or lower than upper bound for root height (%d)' % (
+            args.rhlo, args.rhhi
+        )
+        sys.exit()
 
     csv = None if args.csv is None else open(args.csv, 'rU')
     anchre = Anchre(
@@ -552,7 +574,12 @@ def main():
 
     # BEAST!
     print 'BEAST'
-    traces, trees = anchre.call_beast(sample_size=1000)
+    traces, trees = anchre.call_beast(
+        sample_size=100,
+        chain_length=1E6,
+        screen_step=10000,
+        root_height=(args.rhlo, args.rhhi)
+    )
     #print traces['posterior']
 
     sample_origin = map(lambda t: anchre.last_date - t, traces['treeModel.rootHeight'][10:])

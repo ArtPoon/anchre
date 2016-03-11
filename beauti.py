@@ -13,7 +13,8 @@ class Beauti:
         _ = self.template.parse(template_file)
 
     def populate(self, fasta, stem, time_unit='days',
-                 chain_length=None, screen_step=None, log_step=None, treelog_step=None):
+                 chain_length=None, screen_step=None, log_step=None, treelog_step=None,
+                 root_height=None):
         """
         Load sequences from FASTA object into BEAST XML template
         :param fasta: a Python list object containing sublists of header/sequence pairs
@@ -54,6 +55,34 @@ class Beauti:
         t_mcmc = self.template.find('mcmc')
         if chain_length:
             t_mcmc.set('chainLength', str(int(chain_length)))  # number of MCMC steps
+
+        # set prior distribution for rootheight
+        if root_height and type(root_height) is tuple and len(root_height) == 2:
+            lower, upper = root_height
+            assert lower <= upper, 'Root height prior specification lower must be <= upper.'
+
+            # # set the uniform prior
+            priors = t_mcmc.find('posterior').find('prior').getchildren()
+            found = False
+            for prior in priors:
+                parameter = prior.find('parameter')
+                if parameter is None or parameter.get('idref') != 'treeModel.rootHeight':
+                    continue
+                found = True
+                prior.set('lower', str(lower))
+                prior.set('upper', str(upper))
+
+            if not found:
+                # TODO: create new element
+                prior = Node('uniformPrior')
+                prior.set('idref', 'treeModel.rootHeight')
+                prior.set('lower', str(lower))
+                prior.set('upper', str(upper))
+
+            # rescale starting tree to be compatible with this prior
+            t_tree = self.template.find('rescaledTree')
+            t_tree.set('height', str(0.1*(upper-lower) + lower))
+
 
         for log in t_mcmc.findall('log'):
             if log.get('id') == 'fileLog':
