@@ -29,7 +29,7 @@ class Anchre:
                  delimiter='_', field=-1,
                  ft2path=None, Rpath=None, java=None,
                  tmpfile='anchre-tmp',
-                 beast_xml_template='beast-template.xml'):
+                 beast_xml_template=None):
         self.csv = csv
         self.iso_format = iso_format
         self.origin = origin
@@ -476,6 +476,7 @@ def main():
     parser.add_argument('-ft2', default='/usr/local/bin/fasttree2', help='Absolute path to FastTree2')
     parser.add_argument('-R', default='/usr/bin/Rscript', help='Absolute path to Rscript')
     parser.add_argument('-java', default='/usr/bin/java', help='Absolute path to Java interpreter')
+    parser.add_argument('-xml', default='xml/beast-template.xml', help='BEAST XML template')
 
     args = parser.parse_args()
 
@@ -486,10 +487,16 @@ def main():
         print 'Expecting ISO formatted dates.'
 
     csv = None if args.csv is None else open(args.csv, 'rU')
-    anchre = Anchre(csv=csv, iso_format=args.iso,
-                     delimiter=args.sep, field=args.pos,
-                     ft2path=args.ft2, Rpath=args.R, java=args.java,
-                     origin = dateup.parse(args.origin).date() if args.origin else date(1970, 1, 1))
+    anchre = Anchre(
+        csv=csv,
+        iso_format=args.iso,
+        delimiter=args.sep,
+        field=args.pos,
+        ft2path=args.ft2,
+        Rpath=args.R,
+        java=args.java,
+        origin = dateup.parse(args.origin).date() if args.origin else date(1970, 1, 1),
+        beast_xml_template=args.xml)
 
     # load sequences
     with open(args.fasta, 'rU') as f:
